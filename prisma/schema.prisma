@@ -1,1 +1,271 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
 
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// Пользователь системы
+model User {
+  id              String   @id @default(cuid())
+  email           String   @unique
+  password        String   // Хешированный пароль
+  name            String?
+  role            String   @default("owner") // admin, accountant, owner
+  status          String   @default("pending") // pending, approved, rejected, disabled
+  householdId     String?  @unique // Связь с домохозяйством
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  household       Household?  @relation(fields: [householdId], references: [id], onDelete: SetNull)
+  notifications   Notification[]
+  
+  @@index([email])
+  @@index([role])
+  @@index([status])
+}
+
+// Участок (дачный участок)
+model Plot {
+  id              String   @id @default(cuid())
+  number          String   @unique // Номер участка
+  cadastralNumber String?  // Кадастровый номер
+  area            Float    // Площадь в сотках
+  address         String?  // Адрес/расположение
+  status          String   @default("active") // active, inactive, vacant
+  electricity     Boolean  @default(false) // Наличие электричества
+  water           Boolean  @default(false) // Наличие воды
+  gas             Boolean  @default(false) // Наличие газа
+  notes           String?  // Примечания
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  households      Household[]
+  membershipFees  MembershipFee[]
+}
+
+// Домохозяйство (владелец/арендатор участка)
+model Household {
+  id              String   @id @default(cuid())
+  plotId          String
+  lastName        String   // Фамилия
+  firstName       String   // Имя
+  middleName      String?  // Отчество
+  phone           String?  // Телефон
+  email           String?  // Email
+  passportSeries  String?  // Серия паспорта
+  passportNumber  String?  // Номер паспорта
+  addressReg      String?  // Адрес регистрации
+  ownershipType   String   @default("owner") // owner, tenant
+  memberSince     DateTime? // Дата вступления в СНТ
+  status          String   @default("active") // active, inactive, deceased
+  isBoardMember   Boolean  @default(false) // Член правления
+  boardPosition   String?  // Должность в правлении
+  notes           String?  // Примечания
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  plot            Plot     @relation(fields: [plotId], references: [id], onDelete: Cascade)
+  payments        Payment[]
+  user            User?
+  
+  @@index([plotId])
+}
+
+// Членский взнос (тариф)
+model MembershipFee {
+  id              String   @id @default(cuid())
+  plotId          String
+  year            Int      // Год
+  amount          Float    // Сумма взноса за год
+  perSotka        Boolean  @default(true) // За сотку или фиксированная
+  description     String?  // Описание
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  plot            Plot     @relation(fields: [plotId], references: [id], onDelete: Cascade)
+  payments        Payment[]
+  
+  @@unique([plotId, year])
+  @@index([plotId, year])
+}
+
+// Платёж
+model Payment {
+  id              String   @id @default(cuid())
+  householdId     String
+  membershipFeeId String?
+  amount          Float    // Сумма платежа
+  paymentType     String   // membership, electricity, water, gas, other
+  paymentMethod   String   @default("cash") // cash, card, transfer
+  referenceNumber String?  // Номер квитанции/платежа
+  paymentDate     DateTime // Дата платежа
+  periodFrom      DateTime? // Период с
+  periodTo        DateTime? // Период по
+  notes           String?  // Примечания
+  createdBy       String?  // ID пользователя, создавшего запись
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  household       Household     @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  membershipFee   MembershipFee? @relation(fields: [membershipFeeId], references: [id], onDelete: SetNull)
+  
+  @@index([householdId])
+  @@index([paymentDate])
+  @@index([paymentType])
+}
+
+// Доход/Расход
+model Transaction {
+  id              String   @id @default(cuid())
+  type            String   // income, expense
+  category        String   // membership, electricity, maintenance, salary, equipment, other
+  amount          Float    // Сумма
+  description     String   // Описание
+  referenceNumber String?  // Номер документа
+  transactionDate DateTime // Дата операции
+  counterparty    String?  // Контрагент
+  notes           String?  // Примечания
+  createdBy       String?  // ID пользователя, создавшего запись
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@index([type])
+  @@index([category])
+  @@index([transactionDate])
+}
+
+// Категория доходов/расходов
+model TransactionCategory {
+  id              String   @id @default(cuid())
+  type            String   // income, expense
+  name            String   // Название
+  description     String?  // Описание
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@unique([type, name])
+}
+
+// Резервная копия
+model Backup {
+  id              String   @id @default(cuid())
+  filename        String   // Имя файла
+  size            Float    // Размер в байтах
+  type            String   @default("manual") // manual, auto
+  status          String   @default("completed") // completed, failed
+  notes           String?  // Примечания
+  createdAt       DateTime @default(now())
+  
+  @@index([createdAt])
+}
+
+// Настройки СНТ
+model Settings {
+  id              String   @id @default(cuid())
+  key             String   @unique
+  value           String
+  description     String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// Объявление
+model Announcement {
+  id              String   @id @default(cuid())
+  title           String
+  content         String
+  important       Boolean  @default(false)
+  publishDate     DateTime @default(now())
+  expiryDate      DateTime?
+  status          String   @default("published") // draft, published, archived
+  createdBy       String?  // ID пользователя
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@index([publishDate])
+  @@index([status])
+}
+
+// Документ
+model Document {
+  id              String   @id @default(cuid())
+  title           String
+  category        String   // charter, protocol, report, contract, other
+  description     String?
+  filePath        String?  // Путь к файлу (для будущего использования)
+  documentDate    DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@index([category])
+  @@index([documentDate])
+}
+
+// Счётчик показаний
+model MeterReading {
+  id              String   @id @default(cuid())
+  plotId          String   // Участок
+  meterType       String   // electricity, water, gas
+  readingValue    Float    // Показание
+  readingDate     DateTime // Дата снятия показания
+  previousReading Float?   // Предыдущее показание
+  consumption     Float?   // Потребление
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@index([plotId, meterType, readingDate])
+}
+
+// Заявка на регистрацию
+model PendingRegistration {
+  id              String   @id @default(cuid())
+  email           String
+  password        String   // Хешированный пароль
+  name            String
+  householdId     String?  // Запрошенная связь с домохозяйством
+  status          String   @default("pending") // pending, approved, rejected
+  requestDate     DateTime @default(now())
+  processedDate   DateTime?
+  processedBy     String?  // ID администратора
+  notes           String?  // Комментарий администратора
+  
+  @@index([status])
+}
+
+// Уведомление
+model Notification {
+  id              String   @id @default(cuid())
+  userId          String   // Получатель
+  title           String
+  content         String
+  type            String   // info, warning, payment, announcement
+  link            String?  // Ссылка для перехода
+  read            Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId, read])
+  @@index([createdAt])
+}
+
+// Токен для сброса пароля
+model PasswordResetToken {
+  id              String   @id @default(cuid())
+  email           String
+  token           String   @unique
+  expiresAt       DateTime
+  used            Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  
+  @@index([email])
+  @@index([token])
+}
